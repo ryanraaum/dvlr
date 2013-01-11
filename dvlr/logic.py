@@ -1,16 +1,7 @@
-#/usr/bin/env python
-
-import sys
 import os
 import re
-import getopt
-import tkFileDialog
 
 from numpy import *
-
-SAVE_FILE_TYPES=[("space delimited",".prn"),
-                 ("text",".txt"),
-                 ("All files","*")]
 
 class View:
     def __init__(self, label):
@@ -206,16 +197,18 @@ class Prn:
         
         V1_landmarks = self.view1.landmarks_matrix()
         V2_landmarks = self.view2.landmarks_matrix()
-        V1_lines = self.view1.lines_matrix()
-        V2_lines = self.view2.lines_matrix()
-        
         V2_landmarks_aligned = Q * transpose(V2_landmarks) + q
-        V2_lines_aligned = Q * transpose(V2_lines) + q
-        
         self.view1.update_landmarks(V1_landmarks)
-        self.view1.update_lines(V1_lines)
         self.view2.update_landmarks(transpose(V2_landmarks_aligned))
-        self.view2.update_lines(transpose(V2_lines_aligned))
+
+        if len(self.view1.linelist) > 0:
+            V1_lines = self.view1.lines_matrix()
+            self.view1.update_lines(V1_lines)
+
+        if len(self.view2.linelist) > 0:    
+            V2_lines = self.view2.lines_matrix()
+            V2_lines_aligned = Q * transpose(V2_lines) + q
+            self.view2.update_lines(transpose(V2_lines_aligned))
     
     def process_views(self):
         # find registration points
@@ -276,33 +269,8 @@ class Writer:
         return []
     
 class GRFNDWriter(Writer):
-    def __init__(self):
-        self.identifier = 'GRFND'
-        pattern = '^(?:GRFND,)(.*)'
-        self.regex = re.compile(pattern)
-    
-    def write(self, collection, options):
-        options = [ self.regex.match(x).group(1) 
-                    for x in options 
-                    if x.startswith(self.identifier)]
-        if "landmarks by individual" in options:
-            self.write_landmarks(collection)
-        if "landmarks and lines by individual" in options:
-            self.write_landmarks_and_lines(collection)
-        if "all individuals combined (landmarks only)" in options:
-            self.write_combined(collection)
-                    
-    def options(self):
-        return ["landmarks by individual", 
-                "landmarks and lines by individual", 
-                "all individuals combined (landmarks only)"]
-                
-    def write_landmarks(self, collection):
-        if __name__ == "__main__":
-            directory = os.path.curdir
-        else:
-            dt = "Save individual GRFND landmark files where?"
-            directory = tkFileDialog.askdirectory(title=dt)
+                                           
+    def write_landmarks(self, collection, directory):
         for individual in collection.individuals:
             outname = os.path.join(directory, individual.label + '.dt1')
             outfile = open(outname, 'w')
@@ -317,12 +285,7 @@ class GRFNDWriter(Writer):
                 outfile.write(landmark.points_as_string())
             outfile.close()
             
-    def write_landmarks_and_lines(self, collection):
-        if __name__ == "__main__":
-            directory = os.path.curdir
-        else:
-            dt = "Save individual GRFND landmark and line files where?"
-            directory = tkFileDialog.askdirectory(title=dt)
+    def write_landmarks_and_lines(self, collection, directory):
         for individual in collection.individuals:
             outname = os.path.join(directory, individual.label + '.dt2')
             outfile = open(outname, 'w')
@@ -341,7 +304,7 @@ class GRFNDWriter(Writer):
                 outfile.write(line.points_as_string())
             outfile.close()
             
-    def write_combined(self, collection):
+    def write_combined(self, collection, filename):
         num_points = None
         dimensions = None
         num_individuals = len(collection.individuals)
@@ -359,37 +322,15 @@ class GRFNDWriter(Writer):
         header = "1 %sL %s 1 9999 DIM=%s\n" % ( num_individuals, 
                                                 num_points, 
                                                 dimensions  )
-        if __name__ == "__main__":
-            outname = os.path.join(os.path.curdir, 'combined.dt0')
-        else:
-            dt = "Save combined GRFND landmark file as?"
-            df = "combined_grfnd.prn"
-            outname = tkFileDialog.asksaveasfilename( title=dt,
-                                                      initialfile=df,
-                                                      filetypes=SAVE_FILE_TYPES)
-        outfile = open(outname, 'w')
+        outfile = open(filename, 'w')
         outfile.write(header)
         outfile.write(labels)
         outfile.write(points)
         outfile.close()
     
 class MorphologikaWriter(Writer):
-    def __init__(self):
-        self.identifier = 'Morphologika'
-        pattern = '^(?:Morphologika,)(.*)'
-        self.regex = re.compile(pattern)
-        
-    def write(self, collection, options):
-        options = [ self.regex.match(x).group(1) 
-                    for x in options 
-                    if x.startswith(self.identifier) ]
-        if "all individuals combined (landmarks only)" in options:
-            self.write_combined(collection)
-            
-    def options(self):
-        return ["all individuals combined (landmarks only)"]
-        
-    def write_combined(self, collection):
+              
+    def write_combined(self, collection, filename):
         num_landmarks = None
         dimensions = None
         num_individuals = len(collection.individuals)
@@ -404,15 +345,8 @@ class MorphologikaWriter(Writer):
             for landmark in individual.landmarks:
                 points += landmark.points_as_string(linefeed="windows")
             labels += individual.label + '\r\n'
-        if __name__ == "__main__":
-            outname = os.path.join(os.path.curdir, 'combined.mka')
-        else:
-            dt = "Save combined Morphologika landmark file as?"
-            df = "combined_morphologika.prn"
-            outname = tkFileDialog.asksaveasfilename( title=dt,
-                                                      initialfile=df,
-                                                      filetypes=SAVE_FILE_TYPES)
-        outfile = open(outname, 'w')
+
+        outfile = open(filename, 'w')
         outfile.write("[individuals]\r\n%s\r\n" % num_individuals)
         outfile.write("[landmarks]\r\n%s\r\n" % num_landmarks)
         outfile.write("[dimensions]\r\n%s\r\n" % dimensions)
@@ -422,34 +356,23 @@ class MorphologikaWriter(Writer):
         outfile.write(points)
         outfile.close()
 
-def suppos(X, Z):
-    
-    (m,n) = X.shape
-    
+def suppos(X, Z):    
+    (m,n) = X.shape  
     meanX = mean(X, 1)
-    meanZ = mean(Z, 1)
-     
+    meanZ = mean(Z, 1) 
     X = X - meanX
     Z = Z - meanZ
-
-    ZT = transpose(Z)
-    
-    A = X * ZT
-    
-    (U, s, V) = linalg.svd(A)  
-   
+    ZT = transpose(Z)    
+    A = X * ZT    
+    (U, s, V) = linalg.svd(A)     
     VT = transpose(V)
-
     Q = U * VT
-
-    q = meanX - Q * meanZ
-    
+    q = meanX - Q * meanZ    
     Rmsd = X - Q * Z
-    rmsd = linalg.norm(Rmsd)/sqrt(n)
-    
+    rmsd = linalg.norm(Rmsd)/sqrt(n)    
     return (rmsd,q,Q)
     
-def dvlr(filenames, output_formats):
+def dvlr(filenames):
     failed_to_process = []
     processed = []
     c = Collection()
@@ -463,33 +386,4 @@ def dvlr(filenames, output_formats):
         except:
             failed_to_process.append(filename)
     
-    available_writers = []
-    for item in globals().keys():
-        if item.endswith('Writer') and item != 'Writer':
-            available_writers.append(globals()[item]())
-    for writer in available_writers:
-        writer.write(c, output_formats)
-    return (processed, failed_to_process)
-           
-def main(argv=None):
-    if argv is None:
-        argv = sys.argv
-    # parse command line options
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], "h", ["help"])
-    except getopt.error, msg:
-        print msg
-        print "for help use --help"
-        sys.exit(2)
-    # process options
-    for o, a in opts:
-        if o in ("-h", "--help"):
-            print __doc__
-            sys.exit(0)
-    # process arguments
-    dvlr(args, ["Morpheus,landmarks by individual"])
-    
-if __name__ == "__main__":
-    main()
-    
-            
+    return (c, processed, failed_to_process)

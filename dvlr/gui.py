@@ -1,12 +1,11 @@
-
-
 from Tkinter import *
 import tkFileDialog
 import tkMessageBox
 import dvlr
 
-def callback():
-    print "called the callback!"
+SAVE_FILE_TYPES=[("space delimited",".prn"),
+                 ("text",".txt"),
+                 ("All files","*")]
 
 
 # Filetype selections for askopenfilename and asksaveasfilename:
