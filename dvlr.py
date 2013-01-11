@@ -5,11 +5,8 @@ import os
 import re
 import getopt
 import tkFileDialog
-import fpconst
 
-from numarray import *
-from numarray.mlab import svd
-from numarray.mlab import mean as mlab_mean
+from numpy import *
 
 SAVE_FILE_TYPES=[("space delimited",".prn"),
                  ("text",".txt"),
@@ -42,17 +39,19 @@ class View:
         points_list = []
         for line in self.linelist:
             points_list += line.as_list
-        matrix = asarray(points_list, type=Float)
-        matrix.setshape((-1,3))
-        return matrix
+        num_points = len(points_list)/3
+        m = matrix(points_list)
+        m.resize(num_points,3)
+        return m
     
     def landmarks_matrix(self):
         points_list = []
         for landmark in self.landmarklist:
             points_list += landmark.as_list
-        matrix = asarray(points_list, type=Float)
-        matrix.setshape((-1,3))
-        return matrix
+        num_points = len(points_list)/3
+        m = matrix(points_list)
+        m.resize(num_points,3)
+        return m
             
     def set_reg_points(self, label_list):
         new_list = []
@@ -81,7 +80,7 @@ class View:
     def update_landmarks(self, matrix):
         for index in range(0,len(self.landmarklist)):
             curr = Datapoint(self.landmarklist[index].label)
-            curr.add_point(matrix[index].tolist())
+            curr.add_point(matrix[index].tolist()[0])
             self.analyzed_landmarks.append(curr)
               
     def update_lines(self, matrix):
@@ -91,7 +90,7 @@ class View:
             line_size = len(self.linelist[index].as_list)
             end_index = matrix_index + line_size/3
             for i in range(matrix_index, end_index):
-                curr.add_point(matrix[i].tolist())
+                curr.add_point(matrix[i].tolist()[0])
             self.analyzed_lines.append(curr)
             matrix_index = end_index
             
@@ -111,7 +110,7 @@ class Datapoint:
         
     def add_point(self, point):
         for item in point:    
-            self.as_list = self.as_list + [myfloat(item),]
+            self.as_list = self.as_list + [float32(item),]
             
     def points_as_string(   self, 
                             missing_data    =   "9999", 
@@ -151,9 +150,10 @@ class RegList:
             self.as_list = self.as_list + landmark.as_list
             
     def as_matrix(self):
-        matrix = asarray(self.as_list, type=Float)
-        matrix.setshape((-1,3))
-        return matrix
+        num_points = len(self.as_list)/3
+        m = matrix(self.as_list)
+        m.resize(num_points,3)
+        return m
 
 class Prn:
     def __init__(self):
@@ -209,8 +209,8 @@ class Prn:
         V1_lines = self.view1.lines_matrix()
         V2_lines = self.view2.lines_matrix()
         
-        V2_landmarks_aligned = matrixmultiply(Q, transpose(V2_landmarks)) + q
-        V2_lines_aligned = matrixmultiply(Q, transpose(V2_lines)) + q
+        V2_landmarks_aligned = Q * transpose(V2_landmarks) + q
+        V2_lines_aligned = Q * transpose(V2_lines) + q
         
         self.view1.update_landmarks(V1_landmarks)
         self.view1.update_lines(V1_lines)
@@ -426,40 +426,28 @@ def suppos(X, Z):
     
     (m,n) = X.shape
     
-    meanX = mlab_mean(X, 1)
-    meanZ = mlab_mean(Z, 1)
-    
-    meanX.setshape((-1,1))
-    meanZ.setshape((-1,1))
-    
+    meanX = mean(X, 1)
+    meanZ = mean(Z, 1)
+     
     X = X - meanX
     Z = Z - meanZ
 
     ZT = transpose(Z)
     
-    A = matrixmultiply(X, ZT)
+    A = X * ZT
     
-    (U, s, V) = svd(A)
-    
-    V = transpose(V) # hack
-    
+    (U, s, V) = linalg.svd(A)  
+   
     VT = transpose(V)
+
+    Q = U * VT
+
+    q = meanX - Q * meanZ
     
-    Q = matrixmultiply(U, VT)
-    
-    q = meanX - matrixmultiply(Q, meanZ)
-    
-    Rmsd = X - matrixmultiply(Q, Z)
-    rmsd = frobenius(Rmsd)/sqrt(n)
+    Rmsd = X - Q * Z
+    rmsd = linalg.norm(Rmsd)/sqrt(n)
     
     return (rmsd,q,Q)
-    
-def frobenius(X):
-    total = 0
-    for row in X:
-        for entry in row:
-            total += entry*entry
-    return sqrt(total)
     
 def dvlr(filenames, output_formats):
     failed_to_process = []
@@ -482,13 +470,7 @@ def dvlr(filenames, output_formats):
     for writer in available_writers:
         writer.write(c, output_formats)
     return (processed, failed_to_process)
-
-def myfloat(x):
-    if x == "NaN":
-        return fpconst.NaN
-    return float(x)
-
-            
+           
 def main(argv=None):
     if argv is None:
         argv = sys.argv
